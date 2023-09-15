@@ -35,8 +35,8 @@ def mask_grabcut2(tp, w, h, img):
   return mask_grabcutbase(tp, w, h, img) == 0
 
 def get_mslice(tp, w, h):
-  return np.s_[tp[1] - h // 2 : tp[1] + h // 2,
-               tp[0] - w // 2 : tp[0] + w // 2,
+  return np.s_[tp[1] - h // 2 : tp[1] + round(h / 2),
+               tp[0] - w // 2 : tp[0] + round(w / 2),
                :]
 
 def mask_rect(tp, w, h, img):
@@ -88,12 +88,17 @@ class AutoOverlay:
 
   def point_click(self, event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
-      self.tp = np.array((x, y))
+      self.tp = np.array((2 * x, 2 * y))
       print("Got coords", *self.tp)
 
   def auto_overlay(self, *, videopath, start_time, crop_x, crop_y, crop_width, crop_height, rect_width, rect_height, frame_period, show_rect):
     vidcap = cv2.VideoCapture(videopath)
     vidcap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
+
+    work_window_name = 'CLICK ON OBJECT'
+
+    tp_savefile = 'tps.txt'
+    print(f"Saving tracked points to {tp_savefile}")
 
     # x, y, w, h
     crop_rect = (crop_x, crop_y, crop_width, crop_height)
@@ -106,12 +111,12 @@ class AutoOverlay:
     cropped = crop(img)
     overlay = cropped.copy()
 
-    #show_img('test', cropped)
+    #show_img(work_window_name, cropped)
     #rect = cv2.selectROI('select rectangle', cropped)
 
     #rect_buf = 5
     #cv2.rectangle(cropped, (rect[0] - rect_buf, rect[1] - rect_buf), (rect[0] + rect[2] + rect_buf, rect[1] + rect[3] + rect_buf), color=red, thickness=3)
-    #show_img('test', cropped)
+    #show_img(work_window_name, cropped)
 
     #mask = np.zeros(cropped.shape[:2], np.uint8)
     #cv2.grabCut(cropped, mask, rect, np.zeros((1, 65)), np.zeros((1, 65)), 5, cv2.GC_INIT_WITH_RECT)
@@ -119,8 +124,8 @@ class AutoOverlay:
     #masked = cropped * mask2[:, :, np.newaxis]
     #show_img('target', masked)
 
-    cv2.namedWindow('test')
-    cv2.setMouseCallback('test', self.point_click)
+    cv2.namedWindow(work_window_name)
+    cv2.setMouseCallback(work_window_name, self.point_click)
 
     # Tracked Point
     old_tp = None
@@ -130,7 +135,10 @@ class AutoOverlay:
 
     frames = []
     masks_used = []
-    tps = []
+
+    if True:
+      tps = list(np.loadtxt(tp_savefile))
+      print(f"Loaded {len(tps)} tracked points")
 
     i = 0
     frameind = 0
@@ -164,8 +172,13 @@ class AutoOverlay:
         if show_rect:
           plot_rect(dummy, self.tp, rect_width, rect_height, color=red)
 
-      cv2.imshow('test', dummy)
+      showimg = cv2.resize(dummy, (dummy.shape[1] // 2, dummy.shape[0] // 2))
+      cv2.imshow(work_window_name, showimg)
       key = cv2.waitKey(0)
+
+      if key == 27:
+        print("Got ESC, exiting.")
+        break
 
       if self.tp is None:
         print("Must click initially!")
@@ -183,17 +196,18 @@ class AutoOverlay:
 
       maskf_args = (rounded_tp, rect_width, rect_height, next_cropped)
 
-      if key == 27:
-        print("Got ESC, exiting.")
-        break
-      elif key == ord('q'): # Go back
+      if key == ord('h'): # Go back
         if frameind > 0:
           frameind -= 1
+        else:
+          print("AT START")
         continue
 
-      elif key == ord('w'): # Go forwards
+      elif key == ord('l'): # Go forwards
         if not newframe and frameind < len(frames) - 1:
           frameind += 1
+        else:
+          print("AT END")
         continue
 
       elif key == ord('a'):
@@ -256,7 +270,7 @@ class AutoOverlay:
       #if mask is not None:
       #  overlay = np.where(mask, overlay, next_cropped)
       #  cv2.imwrite("overlay.png", overlay)
-      #  cv2.imshow('test', overlay)
+      #  cv2.imshow(work_window_name, overlay)
       #  cv2.waitKey(1)
 
       overlay = frames[0].copy()
@@ -265,9 +279,10 @@ class AutoOverlay:
           overlay = np.where(masks_used[j], overlay, frames[j])
 
       cv2.imwrite("overlay.png", overlay)
-      cv2.imshow('overlay', overlay)
+      showimg = cv2.resize(overlay, (overlay.shape[1] // 2, overlay.shape[0] // 2))
+      cv2.imshow('overlay', showimg)
       cv2.waitKey(1)
-      np.savetxt("tps.txt", np.array(tps))
+      np.savetxt(tp_savefile, np.array(tps))
 
       frameind += 1
 
